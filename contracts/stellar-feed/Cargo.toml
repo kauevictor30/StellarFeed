@@ -2,7 +2,7 @@
 name = "stellar-feed"
 version = "0.1.0"
 edition = "2021"
-description = "StellarFeed — oráculo de preços nativo da rede Stellar (Soroban)"
+description = "StellarFeed — Stellar-native price oracle (Soroban)"
 license = "Apache-2.0"
 
 [lib]

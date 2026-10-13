@@ -1,4 +1,4 @@
-// Botão Conectar Freighter + endereço + rede.
+// Freighter connect button + address + network.
 export function ConnectButton({ freighter }) {
   const { connected, address, network, error, connect, disconnect } = freighter;
 
@@ -6,7 +6,7 @@ export function ConnectButton({ freighter }) {
     return (
       <div>
         <button style={styles.btn} onClick={connect}>
-          Conectar Freighter
+          Connect Freighter
         </button>
         {error && <div style={styles.err}>{error}</div>}
       </div>
@@ -18,7 +18,7 @@ export function ConnectButton({ freighter }) {
         {address.slice(0, 6)}…{address.slice(-6)} ({network})
       </span>
       <button style={styles.ghost} onClick={disconnect}>
-        Desconectar
+        Disconnect
       </button>
     </div>
   );

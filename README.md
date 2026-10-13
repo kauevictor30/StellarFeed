@@ -1,110 +1,110 @@
-# ✦ StellarFeed — Oráculo de Preços nativo da Stellar
+# ✦ StellarFeed — Stellar-Native Price Oracle
 
-Price feed de alta performance e 100% open source: **Rust (contrato Soroban + worker) + React (dashboard)**.
-Zero Python — nenhuma linha.
+High-performance, 100% open source price feed: **Rust (Soroban contract + worker) + React (dashboard)**.
+Zero Python — not a single line.
 
 ```text
 CoinGecko ──HTTP──▶ worker (Rust) ──stellar contract invoke──▶ Soroban (Rust) ──RPC──▶ React
                            │                              │                          │
-                      a cada 5 min                   BRLXLM / BRLUSDC            Freighter + live
+                      every 5 min                    BRLXLM / BRLUSDC            Freighter + live
 ```
 
-| Módulo | Pasta | Stack |
+| Module | Folder | Stack |
 |---|---|---|
-| Contrato on-chain | `contracts/stellar-feed` | Rust + `soroban-sdk` v27 (`#![no_std]`, WASM) |
-| Worker off-chain | `worker` | Rust + `tokio` + `reqwest` + Stellar CLI oficial |
+| On-chain contract | `contracts/stellar-feed` | Rust + `soroban-sdk` v27 (`#![no_std]`, WASM) |
+| Off-chain worker | `worker` | Rust + `tokio` + `reqwest` + official Stellar CLI |
 | Frontend | `frontend` | React + Vite + `@stellar/stellar-sdk` + `@stellar/freighter-api` |
 
-## 1. Pré-requisitos
+## 1. Prerequisites
 
-| Ferramenta | Versão mínima | Instalação |
+| Tool | Minimum version | Install |
 |---|---|---|
 | Rust | 1.84+ | `curl https://sh.rustup.rs -sSf \| sh` |
-| Target WASM | — | `rustup target add wasm32v1-none` |
-| Stellar CLI | recente | `cargo install --locked stellar-cli` |
-| Node.js | 22+ | `nvm install 22` (SDK v16 exige Node 22+) |
+| WASM target | — | `rustup target add wasm32v1-none` |
+| Stellar CLI | recent | `cargo install --locked stellar-cli` |
+| Node.js | 22+ | `nvm install 22` (SDK v16 requires Node 22+) |
 
-## 2. Contrato (Soroban / Rust)
+## 2. Contract (Soroban / Rust)
 
 ```bash
-# Testes unitários (sem rede)
+# Unit tests (no network needed)
 cargo test -p stellar-feed
 
-# Build do WASM otimizado (NÃO use `cargo build` p/ deploy)
+# Optimized WASM build (do NOT use `cargo build` for deploys)
 stellar contract build
 # → target/wasm32v1-none/release/stellar_feed.wasm
 
-# Identidade admin (o Worker) + funding na testnet
+# Admin identity (the Worker) + testnet funding
 stellar keys generate alice --network testnet --fund
 
-# Deploy (o --admin é o endereço do Worker)
+# Deploy (--admin is the Worker address)
 stellar contract deploy \
   --wasm target/wasm32v1-none/release/stellar_feed.wasm \
   --source-account alice \
   --network testnet \
   -- --admin alice
-# → anote o Contract ID (CABC...)
+# → note the contract ID (CABC...)
 
-# Leitura de teste (sem assinatura)
+# Test read (no signature required)
 stellar contract invoke \
   --id <CONTRACT_ID> --source-account alice --network testnet \
   -- get-price --symbol BRLXLM
 ```
 
-### API do contrato
+### Contract API
 
-| Função | Auth | Descrição |
+| Function | Auth | Description |
 |---|---|---|
-| `__constructor(admin)` | deploy | Define o Admin (Worker) — roda 1x |
-| `update_price(symbol, price, timestamp)` | só Admin | `price: i128` escalado por 1e7, `timestamp: u64` unix |
-| `get_price(symbol)` | ninguém (read-only) | Retorna `PriceData { price, timestamp }` ou `NoPriceData` |
-| `set_admin(new_admin)` | só Admin | Rotaciona o Worker |
-| `get_admin()` / `version()` | ninguém | Metadados |
+| `__constructor(admin)` | deploy | Sets the Admin (Worker) — runs once |
+| `update_price(symbol, price, timestamp)` | Admin only | `price: i128` scaled by 1e7, `timestamp: u64` unix |
+| `get_price(symbol)` | none (read-only) | Returns `PriceData { price, timestamp }` or `NoPriceData` |
+| `set_admin(new_admin)` | Admin only | Rotates the Worker |
+| `get_admin()` / `version()` | none | Metadata |
 
-Convenção: `R$ 5,1234567 → 51_234_567`. Símbolos: `"BRLXLM"`, `"BRLUSDC"` (máx. 32 chars).
-Cada `update_price` publica o evento `PriceUpdated` (indexável via RPC `getEvents`) e estende o TTL do entry (~90 dias).
+Convention: `R$ 5.1234567 → 51_234_567`. Symbols: `"BRLXLM"`, `"BRLUSDC"` (max 32 chars).
+Every `update_price` publishes a `PriceUpdated` event (indexable via RPC `getEvents`) and extends the entry TTL (~90 days).
 
-## 3. Worker (Rust puro)
+## 3. Worker (pure Rust)
 
-Daemon que a cada `POLL_INTERVAL_SECS` busca `stellar` + `usd-coin` em BRL na CoinGecko e invoca `update-price` para cada símbolo, com retry/backoff e logs `tracing`.
+Daemon that every `POLL_INTERVAL_SECS` fetches `stellar` + `usd-coin` in BRL from CoinGecko and invokes `update-price` per symbol, with retry/backoff and `tracing` logs.
 
 ```bash
 cd worker
 cp .env.example .env
-# edite: STELLAR_CONTRACT_ID=<saída do deploy>, STELLAR_SOURCE_ACCOUNT=alice
+# edit: STELLAR_CONTRACT_ID=<deploy output>, STELLAR_SOURCE_ACCOUNT=alice
 
-# Só coleta e loga (sem gastar taxa) — recomendado no 1º teste:
+# Fetch-and-log only (no fees spent) — recommended for the first run:
 DRY_RUN=1 cargo run -p stellar-feed-worker
 
-# Produção (testnet):
+# Production (testnet):
 cargo run --release -p stellar-feed-worker
-# ou: RUST_LOG=info POLL_INTERVAL_SECS=300 ./target/release/stellar-feed-worker
+# or: RUST_LOG=info POLL_INTERVAL_SECS=300 ./target/release/stellar-feed-worker
 ```
 
-> Por que o worker chama o `stellar` CLI em vez de assinar XDR na mão? Montar `InvokeHostFunction` manualmente exige sequence number, footprint, resource fees e assinatura ed25519 — o CLI oficial (crate `stellar-cli`, mesmo time do `soroban-sdk`) já faz tudo isso. O Rust continua sendo o cérebro (agenda, valida, retry, logs); o CLI é só o motor de assinatura. A função `submit_quote()` em `worker/src/stellar.rs` isola essa camada — dá para trocar por assinatura in-process (`ed25519-dalek` + RPC `simulate/sendTransaction`) sem mudar o resto.
+> Why does the worker shell out to the `stellar` CLI instead of signing XDR by hand? Building an `InvokeHostFunction` manually requires sequence numbers, storage footprints, resource fees, and ed25519 signing — all error-prone. The official CLI (`stellar-cli` crate, same team as `soroban-sdk`) already handles all of that. Rust stays the brain (scheduling, validation, retries, logs); the CLI is just the sign-and-send engine. `submit_quote()` in `worker/src/stellar.rs` isolates that layer — it can be swapped for in-process signing (`ed25519-dalek` + RPC `simulate/sendTransaction`) without touching the rest.
 
 ## 4. Frontend (React + Vite + Freighter)
 
-Dashboard read-only: lê `get_price` via RPC (`simulateTransaction`, grátis, sem carteira) e exibe em tempo real com polling. A carteira Freighter identifica o usuário.
+Read-only dashboard: reads `get_price` via RPC (`simulateTransaction`, free, no wallet needed) and displays it live with polling. The Freighter wallet identifies the user.
 
 ```bash
 cd frontend
 npm install
 cp .env.example .env
-# edite: VITE_CONTRACT_ID=<seu Contract ID>
+# edit: VITE_CONTRACT_ID=<your contract ID>
 
 npm run dev      # http://localhost:5173
-npm run build    # dist/ pronta p/ deploy estático
+npm run build    # dist/ ready for static hosting
 ```
 
-## 5. Estrutura
+## 5. Layout
 
 ```text
 StellarFeed/
 ├── Cargo.toml                    # workspace (contracts + worker)
 ├── contracts/stellar-feed/
 │   ├── Cargo.toml                # soroban-sdk v27, crate-type cdylib
-│   └── src/{lib.rs,test.rs}      # oráculo + 8 testes unitários
+│   └── src/{lib.rs,test.rs}      # oracle + 8 unit tests
 ├── worker/
 │   ├── Cargo.toml                # tokio, reqwest, serde, anyhow, tracing, chrono
 │   └── src/{main.rs,config.rs,price.rs,stellar.rs}
@@ -115,13 +115,13 @@ StellarFeed/
 └── README.md
 ```
 
-## 6. Segurança
+## 6. Security
 
-- `update_price` exige `admin.require_auth()` — ninguém além do Worker escreve.
-- Validação on-chain (`price > 0`, `timestamp > 0`); TTL estendido a cada update anti-arquivamento.
-- Segredos nunca commitados (`.env` no `.gitignore`); frontend nunca recebe chave privada.
-- Antes da mainnet: rode `cargo test`, revise `security.md` do checklist Soroban (auth, TTL, aritmética) e faça deploy primeiro na testnet.
+- `update_price` requires `admin.require_auth()` — nobody but the Worker can write.
+- On-chain validation (`price > 0`, `timestamp > 0`); TTL extended on every update against archival.
+- Secrets never committed (`.env` in `.gitignore`); the frontend never receives a private key.
+- Before mainnet: run `cargo test`, review the Soroban security checklist (auth, TTL, arithmetic), and deploy to testnet first.
 
-## 7. Licença
+## 7. License
 
-Apache-2.0. Contribuições via PR são bem-vindas.
+Apache-2.0. PRs are welcome.

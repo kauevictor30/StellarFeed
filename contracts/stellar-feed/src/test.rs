@@ -1,5 +1,5 @@
-//! Testes unitários do StellarFeed.
-//! Rode com: `cargo test -p stellar-feed`
+//! StellarFeed unit tests.
+//! Run with: `cargo test -p stellar-feed`
 
 use super::*;
 use soroban_sdk::{
@@ -7,7 +7,7 @@ use soroban_sdk::{
     Address, Env, IntoVal, Symbol,
 };
 
-/// Helper: registra o contrato com um admin gerado.
+/// Helper: registers the contract with a generated admin.
 fn setup() -> (Env, Address, Address, StellarFeedContractClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
@@ -80,15 +80,15 @@ fn test_get_unknown_symbol_fails() {
 #[test]
 fn test_only_admin_can_update() {
     let env = Env::default();
-    // NOTE: sem mock_all_auths — vamos autorizar explicitamente como admin
-    // e provar que um atacante recebe erro de auth.
+    // NOTE: no mock_all_auths — we authorize explicitly as admin
+    // and prove that an attacker gets an auth error.
     let admin = Address::generate(&env);
     let attacker = Address::generate(&env);
     let contract_id = env.register(StellarFeedContract, (admin.clone(),));
     let client = StellarFeedContractClient::new(&env, &contract_id);
     let symbol = Symbol::new(&env, "BRLXLM");
 
-    // Admin de verdade: autoriza e passa.
+    // Real admin: authorizes and succeeds.
     client
         .mock_auths(&[MockAuth {
             address: &admin,
@@ -101,11 +101,11 @@ fn test_only_admin_can_update() {
         }])
         .update_price(&symbol, &100, &1_700_000_000);
 
-    // Atacante tentando se passar por admin: o host rejeita (não é o admin
-    // gravado no storage, então require_auth falha na verificação real).
-    // Aqui simulamos a chamada com auth do atacante — o contrato chama
-    // `admin.require_auth()`, e como o mock só autoriza `attacker`,
-    // o host retorna erro de auth (HostError, não FeedError).
+    // Attacker impersonating the admin: the host rejects it (it is not the
+    // admin recorded in storage, so require_auth fails real verification).
+    // Here we simulate the call with the attacker's auth — the contract calls
+    // `admin.require_auth()`, and since the mock only authorizes `attacker`,
+    // the host returns an auth error (HostError, not FeedError).
     let res = client
         .mock_auths(&[MockAuth {
             address: &attacker,
@@ -117,7 +117,7 @@ fn test_only_admin_can_update() {
             },
         }])
         .try_update_price(&symbol, &200, &1_700_000_001);
-    assert!(res.is_err(), "atacante não deveria conseguir atualizar");
+    assert!(res.is_err(), "attacker must not be able to update");
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn test_emits_price_updated_event() {
 
     client.update_price(&symbol, 42_000_000, 1_700_000_000);
 
-    // O evento PriceUpdated deve ter sido publicado.
+    // The PriceUpdated event must have been published.
     let events = env.events().all();
-    assert!(!events.is_empty(), "esperava ao menos 1 evento");
+    assert!(!events.is_empty(), "expected at least 1 event");
 }

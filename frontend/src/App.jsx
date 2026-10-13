@@ -4,10 +4,10 @@ import { PriceCard } from "./components/PriceCard";
 import { ConnectButton } from "./components/ConnectButton";
 import { CONTRACT_ID, NETWORK, fetchPrice } from "./stellar";
 
-// Símbolos publicados pelo worker (devem existir no contrato).
+// Symbols published by the worker (must exist on the contract).
 const SYMBOLS = [
-  { symbol: "BRLXLM", label: "Real / Stellar" },
-  { symbol: "BRLUSDC", label: "Real / USD Coin" },
+  { symbol: "BRLXLM", label: "BRL / Stellar" },
+  { symbol: "BRLUSDC", label: "BRL / USD Coin" },
 ];
 
 const REFRESH_MS = Number(import.meta.env.VITE_REFRESH_MS || 30_000);
@@ -38,7 +38,7 @@ export default function App() {
     setLastSync(new Date());
   }, []);
 
-  // Carga inicial + polling em tempo real.
+  // Initial load + live polling.
   useEffect(() => {
     loadAll();
     const t = setInterval(loadAll, REFRESH_MS);
@@ -51,10 +51,10 @@ export default function App() {
         <div>
           <h1 style={styles.title}>✦ StellarFeed</h1>
           <p style={styles.sub}>
-            Oráculo de preços nativo da Stellar · {NETWORK} · atualiza a cada{" "}
+            Stellar-native price oracle · {NETWORK} · refreshes every{" "}
             {Math.round(REFRESH_MS / 1000)}s
           </p>
-          <p style={styles.mono}>contrato: {CONTRACT_ID || "(configure VITE_CONTRACT_ID)"}</p>
+          <p style={styles.mono}>contract: {CONTRACT_ID || "(set VITE_CONTRACT_ID)"}</p>
         </div>
         <ConnectButton freighter={freighter} />
       </header>
@@ -74,11 +74,11 @@ export default function App() {
 
       <footer style={styles.footer}>
         <button style={styles.ghost} onClick={loadAll}>
-          ↻ Atualizar agora
+          ↻ Refresh now
         </button>
         {lastSync && (
           <span style={styles.muted}>
-            Última sincronização: {lastSync.toLocaleTimeString("pt-BR")}
+            Last sync: {lastSync.toLocaleTimeString("en-US")}
           </span>
         )}
       </footer>

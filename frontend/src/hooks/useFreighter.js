@@ -1,5 +1,5 @@
-// Hook de conexão com a carteira Freighter.
-// Baseado no padrão oficial (@stellar/freighter-api).
+// Freighter wallet connection hook.
+// Follows the official pattern (@stellar/freighter-api).
 import { useCallback, useEffect, useState } from "react";
 import {
   isConnected,
@@ -14,20 +14,20 @@ export function useFreighter() {
   const [network, setNetwork] = useState(null);
   const [error, setError] = useState(null);
 
-  // Na montagem: detecta se já havia acesso concedido.
+  // On mount: detect whether access was already granted.
   useEffect(() => {
     (async () => {
       try {
         const { isConnected: installed } = await isConnected();
         if (!installed) return;
         const { address: addr } = await getAddress();
-        if (!addr) return; // instalado, mas sem acesso concedido ainda
+        if (!addr) return; // installed, but access not granted yet
         const { network: net } = await getNetwork();
         setAddress(addr);
         setNetwork(net);
         setConnected(true);
       } catch {
-        /* silencioso: usuário ainda não conectou */
+        /* silent: user hasn't connected yet */
       }
     })();
   }, []);
@@ -37,7 +37,7 @@ export function useFreighter() {
     try {
       const { isConnected: installed } = await isConnected();
       if (!installed) {
-        throw new Error("Extensão Freighter não instalada. Instale e tente de novo.");
+        throw new Error("Freighter extension not installed. Install it and try again.");
       }
       const { address: addr, error: accessError } = await requestAccess();
       if (accessError) throw new Error(accessError.message);

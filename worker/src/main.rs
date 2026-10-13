@@ -1,11 +1,11 @@
-//! # StellarFeed Worker (Rust puro)
+//! # StellarFeed Worker (pure Rust)
 //!
-//! Daemon off-chain que alimenta o oráculo:
+//! Off-chain daemon feeding the oracle:
 //! ```text
-//! CoinGecko (HTTP) → valida/escala → stellar contract invoke (Testnet)
+//! CoinGecko (HTTP) → validate/scale → stellar contract invoke (Testnet)
 //! ```
-//! Loop infinito com intervalo configurável (`POLL_INTERVAL_SECS`).
-//! Sem Python: apenas Rust + o CLI oficial `stellar` para assinar/enviar.
+//! Infinite loop with a configurable interval (`POLL_INTERVAL_SECS`).
+//! No Python: only Rust + the official `stellar` CLI for signing/sending.
 
 mod config;
 mod price;
@@ -20,7 +20,7 @@ use config::Config;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Logs estruturados; nível via `RUST_LOG` (default: info).
+    // Structured logs; level via `RUST_LOG` (default: info).
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -35,13 +35,13 @@ async fn main() -> Result<()> {
         source = %cfg.source_account,
         interval_s = cfg.poll_interval_secs,
         dry_run = cfg.dry_run,
-        "StellarFeed worker iniciando"
+        "StellarFeed worker starting"
     );
 
-    // Falha rápido se o ambiente estiver quebrado (CLI/RPC).
+    // Fail fast if the environment is broken (CLI/RPC).
     if !cfg.dry_run {
         if let Err(e) = stellar::preflight_check(stellar::rpc_url_for(&cfg.network)).await {
-            warn!("preflight falhou (seguindo mesmo assim): {e:#}");
+            warn!("preflight failed (carrying on anyway): {e:#}");
         }
     }
 
@@ -50,17 +50,17 @@ async fn main() -> Result<()> {
         .timeout(Duration::from_secs(20))
         .build()?;
 
-    // Loop principal: coleta → publica cada símbolo → dorme.
+    // Main loop: fetch → publish each symbol → sleep.
     loop {
         if let Err(e) = run_cycle(&cfg, &http).await {
-            error!("ciclo falhou: {e:#}");
+            error!("cycle failed: {e:#}");
         }
-        info!("próximo ciclo em {}s", cfg.poll_interval_secs);
+        info!("next cycle in {}s", cfg.poll_interval_secs);
         tokio::time::sleep(Duration::from_secs(cfg.poll_interval_secs)).await;
     }
 }
 
-/// Um ciclo completo: buscar preços e publicar cada símbolo.
+/// One full cycle: fetch prices and publish each symbol.
 async fn run_cycle(cfg: &Config, http: &reqwest::Client) -> Result<()> {
     let quotes = price::fetch_quotes(http, &cfg.coingecko_url, cfg.price_scale).await?;
 
@@ -70,11 +70,11 @@ async fn run_cycle(cfg: &Config, http: &reqwest::Client) -> Result<()> {
                 symbol = q.symbol,
                 human = q.human_price,
                 scaled = q.scaled_price,
-                "publicado ✓ ({receipt})"
+                "published ✓ ({receipt})"
             ),
-            Err(e) => error!(symbol = q.symbol, "falha ao publicar: {e:#}"),
+            Err(e) => error!(symbol = q.symbol, "publish failed: {e:#}"),
         }
-        // Pequena pausa entre símbolos p/ não estourar rate-limit do RPC.
+        // Small pause between symbols to avoid RPC rate limits.
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
     Ok(())

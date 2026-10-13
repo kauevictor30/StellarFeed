@@ -1,34 +1,34 @@
 #![no_std]
-//! # StellarFeed — Oráculo de Preços (Soroban / Rust)
+//! # StellarFeed — Price Oracle (Soroban / Rust)
 //!
-//! Contrato minimalista e auditável que armazena a cotação mais recente
-//! de cada ativo (ex: `"BRLXLM"`, `"BRLUSDC"`).
+//! A minimal, auditable contract storing the latest quote
+//! for each asset (e.g. `"BRLXLM"`, `"BRLUSDC"`).
 //!
-//! ## Convenção de preço
-//! - `price` é um `i128` com **7 casas decimais** (fator `10_000_000`),
-//!   o mesmo padrão de precisão da Stellar.
-//!   Ex.: R$ 5,1234567 → `51_234_567`.
-//! - `timestamp` é Unix seconds (ledger timestamp validado off-chain).
+//! ## Price convention
+//! - `price` is an `i128` with **7 decimal places** (factor `10_000_000`),
+//!   matching Stellar's precision standard.
+//!   E.g.: R$ 5.1234567 → `51_234_567`.
+//! - `timestamp` is Unix seconds (ledger timestamp validated off-chain).
 //!
-//! ## Autorização
-//! - `update_price` exige `admin.require_auth()` — só o Worker off-chain.
-//! - `get_price` é read-only, qualquer dApp pode ler sem assinatura.
+//! ## Authorization
+//! - `update_price` requires `admin.require_auth()` — only the off-chain Worker.
+//! - `get_price` is read-only; any dApp can read without signing.
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, Address, Env, Symbol,
 };
 
-/// Fator de escala fixo: 10^7.
+/// Fixed scale factor: 10^7.
 pub const PRICE_SCALE: i128 = 10_000_000;
 
-/// Versão do contrato (para o frontend exibir / checar upgrades).
+/// Contract version (for frontend display / upgrade checks).
 pub const VERSION: u32 = 1;
 
-/// Chaves de storage.
+/// Storage keys.
 ///
-/// - `Admin` fica no **instance storage** (único por contrato).
-/// - Cada preço fica no **persistent storage** (um entry por símbolo,
-///   com TTL próprio estendido a cada update).
+/// - `Admin` lives in **instance storage** (one per contract).
+/// - Each price lives in **persistent storage** (one entry per symbol,
+///   with its own TTL extended on every update).
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -36,41 +36,41 @@ pub enum DataKey {
     Price(Symbol),
 }
 
-/// Cotação armazenada.
+/// Stored quote.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceData {
-    /// Preço escalado por PRICE_SCALE.
+    /// Price scaled by PRICE_SCALE.
     pub price: i128,
-    /// Unix timestamp (segundos) informado pelo Worker.
+    /// Unix timestamp (seconds) reported by the Worker.
     pub timestamp: u64,
 }
 
-/// Erros tipados do contrato.
+/// Typed contract errors.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum FeedError {
-    /// `__constructor` ainda não rodou / Admin não setado.
+    /// `__constructor` hasn't run / Admin not set.
     NotInitialized = 1,
-    /// Preço precisa ser > 0.
+    /// Price must be > 0.
     InvalidPrice = 2,
-    /// Timestamp zero (nunca deve acontecer; protege contra default).
+    /// Zero timestamp (should never happen; guards against defaults).
     InvalidTimestamp = 3,
-    /// Nenhuma cotação registrada para este símbolo ainda.
+    /// No quote ever published for this symbol.
     NoPriceData = 4,
 }
 
-/// Evento publicado a cada atualização — indexável via RPC `getEvents`.
+/// Event published on every update — indexable via RPC `getEvents`.
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceUpdated {
-    /// Símbolo atualizado (ex: "BRLXLM"). Vira tópico do evento.
+    /// Updated symbol (e.g. "BRLXLM"). Becomes an event topic.
     #[topic]
     pub symbol: Symbol,
-    /// Preço escalado.
+    /// Scaled price.
     pub price: i128,
-    /// Timestamp informado pelo Worker.
+    /// Timestamp reported by the Worker.
     pub timestamp: u64,
 }
 
@@ -80,38 +80,38 @@ pub struct StellarFeedContract;
 #[contractimpl]
 impl StellarFeedContract {
     // ------------------------------------------------------------------
-    // Inicialização (roda 1x, atomicamente, no deploy)
+    // Initialization (runs once, atomically, at deploy time)
     // ------------------------------------------------------------------
 
-    /// Inicializa o contrato definindo o Admin (endereço do Worker).
+    /// Initializes the contract, setting the Admin (Worker address).
     ///
-    /// Chamado via: `stellar contract deploy ... -- --admin <ADDRESS>`
+    /// Called via: `stellar contract deploy ... -- --admin <ADDRESS>`
     pub fn __constructor(env: Env, admin: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
-        // TTL generoso p/ o instance entry (~180 dias em ledgers de 5s).
+        // Generous TTL for the instance entry (~180 days in 5s ledgers).
         env.storage().instance().extend_ttl(100_000, 1_000_000);
     }
 
     // ------------------------------------------------------------------
-    // Escrita — apenas Admin (Worker)
+    // Writes — Admin (Worker) only
     // ------------------------------------------------------------------
 
-    /// Registra/atualiza a cotação de um símbolo.
+    /// Records/updates a symbol's quote.
     ///
-    /// # Argumentos
-    /// - `symbol`: ex. `Symbol::new(&env, "BRLXLM")` (máx. 32 chars).
-    /// - `price`: valor escalado por 1e7. Deve ser > 0.
-    /// - `timestamp`: Unix seconds. Deve ser > 0.
+    /// # Arguments
+    /// - `symbol`: e.g. `Symbol::new(&env, "BRLXLM")` (max 32 chars).
+    /// - `price`: value scaled by 1e7. Must be > 0.
+    /// - `timestamp`: Unix seconds. Must be > 0.
     ///
-    /// # Autorização
-    /// Exige assinatura do Admin (`admin.require_auth()`).
+    /// # Authorization
+    /// Requires the Admin's signature (`admin.require_auth()`).
     pub fn update_price(
         env: Env,
         symbol: Symbol,
         price: i128,
         timestamp: u64,
     ) -> Result<(), FeedError> {
-        // 1. Autorização: só o Admin.
+        // 1. Authorization: Admin only.
         let admin: Address = env
             .storage()
             .instance()
@@ -119,7 +119,7 @@ impl StellarFeedContract {
             .ok_or(FeedError::NotInitialized)?;
         admin.require_auth();
 
-        // 2. Validação de entrada (barata, antes de escrever).
+        // 2. Input validation (cheap, before writing).
         if price <= 0 {
             return Err(FeedError::InvalidPrice);
         }
@@ -127,9 +127,9 @@ impl StellarFeedContract {
             return Err(FeedError::InvalidTimestamp);
         }
 
-        // 3. Escrita no persistent storage + extensão de TTL.
-        //    (~30 dias threshold / ~90 dias extend-to, em ledgers de ~5s:
-        //     17280 ledgers ≈ 1 dia.)
+        // 3. Write to persistent storage + TTL extension.
+        //    (~30-day threshold / ~90-day extend-to, in ~5s ledgers:
+        //     17280 ledgers ≈ 1 day.)
         let key = DataKey::Price(symbol.clone());
         let data = PriceData { price, timestamp };
         env.storage().persistent().set(&key, &data);
@@ -137,7 +137,7 @@ impl StellarFeedContract {
             .persistent()
             .extend_ttl(&key, 30 * 17280, 90 * 17280);
 
-        // 4. Evento para indexadores/dashboards.
+        // 4. Event for indexers/dashboards.
         PriceUpdated {
             symbol,
             price,
@@ -148,7 +148,7 @@ impl StellarFeedContract {
         Ok(())
     }
 
-    /// Rotaciona o Admin. Apenas o Admin atual pode chamar.
+    /// Rotates the Admin. Only the current Admin can call it.
     pub fn set_admin(env: Env, new_admin: Address) -> Result<(), FeedError> {
         let admin: Address = env
             .storage()
@@ -162,11 +162,11 @@ impl StellarFeedContract {
     }
 
     // ------------------------------------------------------------------
-    // Leitura — pública, sem autenticação (usada por dApps e frontend)
+    // Reads — public, no authentication (used by dApps and frontend)
     // ------------------------------------------------------------------
 
-    /// Retorna a cotação mais recente de um símbolo.
-    /// Falha com `NoPriceData` se nunca foi publicado.
+    /// Returns a symbol's latest quote.
+    /// Fails with `NoPriceData` if never published.
     pub fn get_price(env: Env, symbol: Symbol) -> Result<PriceData, FeedError> {
         env.storage()
             .persistent()
@@ -174,7 +174,7 @@ impl StellarFeedContract {
             .ok_or(FeedError::NoPriceData)
     }
 
-    /// Retorna o endereço Admin atual.
+    /// Returns the current Admin address.
     pub fn get_admin(env: Env) -> Result<Address, FeedError> {
         env.storage()
             .instance()
@@ -182,14 +182,14 @@ impl StellarFeedContract {
             .ok_or(FeedError::NotInitialized)
     }
 
-    /// Versão do contrato (útil p/ compatibilidade do frontend/worker).
+    /// Contract version (useful for frontend/worker compatibility).
     pub fn version() -> u32 {
         VERSION
     }
 }
 
 // ----------------------------------------------------------------------
-// Testes unitários (rodam com `cargo test`, sem precisar de rede)
+// Unit tests (run with `cargo test`, no network needed)
 // ----------------------------------------------------------------------
 #[cfg(test)]
 mod test;

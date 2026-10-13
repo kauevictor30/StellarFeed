@@ -1,4 +1,4 @@
-// Cartão de cotação: símbolo, preço formatado, timestamp e estado.
+// Quote card: symbol, formatted price, timestamp, and state.
 import { formatScaled, formatTime } from "../stellar";
 
 export function PriceCard({ label, symbol, data, loading, error }) {
@@ -7,16 +7,16 @@ export function PriceCard({ label, symbol, data, loading, error }) {
       <div style={styles.label}>{label}</div>
       <div style={styles.symbol}>{symbol}</div>
       {loading ? (
-        <div style={styles.muted}>Lendo do contrato…</div>
+        <div style={styles.muted}>Reading from contract…</div>
       ) : error ? (
-        <div style={styles.err}>Erro: {error}</div>
+        <div style={styles.err}>Error: {error}</div>
       ) : data ? (
         <>
           <div style={styles.price}>R$ {formatScaled(data.price)}</div>
-          <div style={styles.muted}>Atualizado em {formatTime(data.timestamp)}</div>
+          <div style={styles.muted}>Updated at {formatTime(data.timestamp)}</div>
         </>
       ) : (
-        <div style={styles.muted}>Sem cotação publicada ainda.</div>
+        <div style={styles.muted}>No quote published yet.</div>
       )}
     </div>
   );

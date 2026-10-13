@@ -1,39 +1,39 @@
-//! Configuração do Worker via variáveis de ambiente.
+//! Worker configuration via environment variables.
 //!
-//! Copie `worker/.env.example` para `worker/.env` (ou exporte as vars)
-//! e ajuste para o seu ambiente.
+//! Copy `worker/.env.example` to `worker/.env` (or export the vars)
+//! and adjust to your environment.
 
 use std::env;
 
 use anyhow::{Context, Result};
 
-/// Config imutável do worker, resolvida uma vez na inicialização.
+/// Immutable worker config, resolved once at startup.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Contract ID do StellarFeed na Testnet (ex.: `CABC...`).
+    /// StellarFeed contract ID on Testnet (e.g. `CABC...`).
     pub contract_id: String,
-    /// Identidade-fonte cadastrada no `stellar keys` (é o Admin on-chain).
+    /// Source identity registered in `stellar keys` (the on-chain Admin).
     pub source_account: String,
-    /// Rede Stellar: `testnet` (default) ou `mainnet`.
+    /// Stellar network: `testnet` (default) or `mainnet`.
     pub network: String,
-    /// URL base do CoinGecko (permite mock em testes).
+    /// CoinGecko base URL (allows mocking in tests).
     pub coingecko_url: String,
-    /// Intervalo entre ciclos de atualização, em segundos.
+    /// Interval between update cycles, in seconds.
     pub poll_interval_secs: u64,
-    /// Fator de escala do preço (deve bater com `PRICE_SCALE` do contrato).
+    /// Price scale factor (must match the contract's `PRICE_SCALE`).
     pub price_scale: f64,
-    /// Se `true`, só busca e loga — não envia transação.
+    /// If `true`, only fetch and log — never send transactions.
     pub dry_run: bool,
 }
 
 impl Config {
-    /// Lê as variáveis de ambiente (com defaults sensatos).
+    /// Reads environment variables (with sensible defaults).
     pub fn from_env() -> Result<Self> {
-        // Carrega `.env` se existir; ignora erro (vars podem vir do shell/CI).
+        // Loads `.env` if present; ignores errors (vars may come from shell/CI).
         let _ = dotenvy::dotenv();
 
         let contract_id = env::var("STELLAR_CONTRACT_ID").context(
-            "STELLAR_CONTRACT_ID não definido. Faça deploy do contrato e exporte o Contract ID.",
+            "STELLAR_CONTRACT_ID not set. Deploy the contract and export its contract ID.",
         )?;
         let source_account = env::var("STELLAR_SOURCE_ACCOUNT").unwrap_or_else(|_| "alice".into());
         let network = env::var("STELLAR_NETWORK").unwrap_or_else(|_| "testnet".into());
@@ -42,11 +42,11 @@ impl Config {
         let poll_interval_secs = env::var("POLL_INTERVAL_SECS")
             .unwrap_or_else(|_| "300".into())
             .parse::<u64>()
-            .context("POLL_INTERVAL_SECS inválido (esperado inteiro)")?;
+            .context("invalid POLL_INTERVAL_SECS (expected integer)")?;
         let price_scale = env::var("PRICE_SCALE")
             .unwrap_or_else(|_| "10000000".into())
             .parse::<f64>()
-            .context("PRICE_SCALE inválido")?;
+            .context("invalid PRICE_SCALE")?;
         let dry_run = env::var("DRY_RUN")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);

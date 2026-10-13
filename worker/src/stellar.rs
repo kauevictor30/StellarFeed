@@ -1,27 +1,27 @@
-//! Submissão on-chain via Stellar CLI (ferramenta oficial, escrita em Rust).
+//! On-chain submission via the Stellar CLI (official tool, written in Rust).
 //!
-//! ## Por que via CLI e não XDR manual?
-//! Montar e assinar um `InvokeHostFunction` na mão exige gerenciar
-//! sequence number, footprint de storage, resource fees, simulação e
-//! assinatura ed25519 — tudo propenso a erro. O `stellar` CLI (crate
-//! oficial `stellar-cli`, mesmo time do `soroban-sdk`) já faz isso e é
-//! o caminho recomendado para bots/workers simples.
+//! ## Why via CLI instead of manual XDR?
+//! Building and signing an `InvokeHostFunction` by hand requires managing
+//! sequence numbers, storage footprints, resource fees, simulation, and
+//! ed25519 signing — all error-prone. The `stellar` CLI (official
+//! `stellar-cli` crate, same team as `soroban-sdk`) already does this and is
+//! the recommended path for simple bots/workers.
 //!
-//! O worker Rust continua sendo o cérebro: ele agenda, busca preços,
-//! valida, aplica retry/backoff e registra logs. O CLI é só o
-//! "motor de assinatura/envio", invocado como subprocesso.
+//! The Rust worker is still the brain: it schedules, fetches prices,
+//! validates, retries with backoff, and logs. The CLI is just the
+//! "sign-and-send engine", invoked as a subprocess.
 //!
-//! Pré-requisitos na máquina do worker:
-//! 1. `stellar` CLI instalado (`cargo install --locked stellar-cli`)
-//! 2. Identidade criada e fundada:
+//! Prerequisites on the worker machine:
+//! 1. `stellar` CLI installed (`cargo install --locked stellar-cli`)
+//! 2. Identity created and funded:
 //!    `stellar keys generate alice --network testnet --fund`
-//! 3. Essa identidade é o `admin` passado no deploy (`-- --admin alice`).
+//! 3. That identity is the `admin` passed at deploy (`-- --admin alice`).
 //!
-//! ## Migração futura (assinatura 100% in-process)
-//! Se quiser eliminar o subprocesso, troque `submit_quote` por chamadas
-//! RPC (`getAccount` → `simulateTransaction` → assinar com `ed25519-dalek`
-//! + `stellar-strkey` → `sendTransaction`) usando `reqwest`. A interface
-//! deste módulo (`submit_quote(&Quote)`) não precisa mudar.
+//! ## Future migration (fully in-process signing)
+//! To drop the subprocess, replace `submit_quote` with RPC calls
+//! (`getAccount` → `simulateTransaction` → sign with `ed25519-dalek`
+//! + `stellar-strkey` → `sendTransaction`) using `reqwest`. This module's
+//! interface (`submit_quote(&Quote)`) does not need to change.
 
 use anyhow::{Context, Result};
 use std::process::Stdio;
@@ -32,9 +32,9 @@ use tracing::{info, warn};
 use crate::config::Config;
 use crate::price::Quote;
 
-/// Envia uma cotação chamando `update_price` no contrato.
+/// Submits a quote by calling `update_price` on the contract.
 ///
-/// Equivale a:
+/// Equivalent to:
 /// ```sh
 /// stellar contract invoke \
 ///   --id <CONTRACT_ID> --source-account <ADMIN> --network testnet \
@@ -45,18 +45,18 @@ pub async fn submit_quote(cfg: &Config, q: &Quote) -> Result<String> {
         info!(
             symbol = q.symbol,
             price = q.scaled_price,
-            "[dry-run] pularia envio on-chain"
+            "[dry-run] would skip on-chain submission"
         );
         return Ok("dry-run".to_string());
     }
 
-    // Backoff simples: 3 tentativas (2s, 4s, 8s).
+    // Simple backoff: 3 attempts (2s, 4s, 8s).
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=3 {
         match invoke_once(cfg, q).await {
             Ok(out) => return Ok(out),
             Err(e) => {
-                warn!("invoke falhou (tentativa {attempt}/3): {e:#}");
+                warn!("invoke failed (attempt {attempt}/3): {e:#}");
                 last_err = Some(e);
                 tokio::time::sleep(Duration::from_secs(2_u64.pow(attempt))).await;
             }
@@ -65,7 +65,7 @@ pub async fn submit_quote(cfg: &Config, q: &Quote) -> Result<String> {
     Err(last_err.unwrap())
 }
 
-/// Uma tentativa de `stellar contract invoke`.
+/// A single `stellar contract invoke` attempt.
 async fn invoke_once(cfg: &Config, q: &Quote) -> Result<String> {
     let price = q.scaled_price.to_string();
     let timestamp = q.timestamp.to_string();
@@ -95,12 +95,12 @@ async fn invoke_once(cfg: &Config, q: &Quote) -> Result<String> {
 
     let output = tokio::time::timeout(Duration::from_secs(60), cmd.output())
         .await
-        .context("timeout após 60s esperando o stellar CLI")?
-        .context("falha ao executar `stellar` — ele está instalado no PATH?")?;
+        .context("timed out after 60s waiting for the stellar CLI")?
+        .context("failed to run `stellar` — is it installed on PATH?")?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        info!(symbol = q.symbol, "update_price confirmado: {stdout}");
+        info!(symbol = q.symbol, "update_price confirmed: {stdout}");
         Ok(stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -108,21 +108,21 @@ async fn invoke_once(cfg: &Config, q: &Quote) -> Result<String> {
     }
 }
 
-/// Checagem de saúde na inicialização: CLI presente + RPC alcançável.
+/// Startup health check: CLI present + RPC reachable.
 pub async fn preflight_check(rpc_url: &str) -> Result<()> {
-    // 1. CLI instalado?
+    // 1. CLI installed?
     let out = Command::new("stellar")
         .arg("--version")
         .stdin(Stdio::null())
         .output()
         .await
-        .context("`stellar` CLI não encontrado no PATH")?;
+        .context("`stellar` CLI not found on PATH")?;
     info!(
         "stellar CLI: {}",
         String::from_utf8_lossy(&out.stdout).trim()
     );
 
-    // 2. RPC responde `getHealth`?
+    // 2. Does the RPC answer `getHealth`?
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()?;
@@ -133,15 +133,15 @@ pub async fn preflight_check(rpc_url: &str) -> Result<()> {
         }))
         .send()
         .await
-        .context("RPC inacessível")?
+        .context("RPC unreachable")?
         .json()
         .await
-        .context("resposta do RPC inválida")?;
+        .context("invalid RPC response")?;
     info!("RPC health: {res}");
     Ok(())
 }
 
-/// URL pública do RPC a partir do nome da rede.
+/// Public RPC URL from the network name.
 pub fn rpc_url_for(network: &str) -> &'static str {
     match network {
         "mainnet" => "https://mainnet.sorobanrpc.com",

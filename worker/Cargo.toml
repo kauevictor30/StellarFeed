@@ -2,7 +2,7 @@
 name = "stellar-feed-worker"
 version = "0.1.0"
 edition = "2021"
-description = "Worker off-chain do StellarFeed: CoinGecko -> Soroban (Rust puro, sem Python)"
+description = "StellarFeed off-chain worker: CoinGecko -> Soroban (pure Rust, no Python)"
 license = "Apache-2.0"
 
 [[bin]]
@@ -13,7 +13,7 @@ path = "src/main.rs"
 # HTTP + async runtime
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-# Serialização / erros / logs / tempo / env
+# Serialization / errors / logs / time / env
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"

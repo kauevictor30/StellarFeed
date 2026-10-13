@@ -1,14 +1,14 @@
-//! Coleta de preços via CoinGecko (API pública, sem chave).
+//! Price fetching via CoinGecko (public API, no key).
 //!
-//! Estratégia:
+//! Strategy:
 //! - `GET /simple/price?ids=stellar,usd-coin&vs_currencies=brl`
-//!   retorna o preço em BRL de 1 XLM e de 1 USDC.
-//! - Convertemos para inteiro escalado (`price * PRICE_SCALE`) para
-//!   enviar ao contrato (que só trabalha com `i128`).
+//!   returns the BRL price of 1 XLM and 1 USDC.
+//! - We convert to scaled integers (`price * PRICE_SCALE`) to
+//!   send to the contract (which only works with `i128`).
 //!
-//! Símbolos on-chain publicados pelo worker:
-//! - `"BRLXLM"`  — BRL por 1 XLM
-//! - `"BRLUSDC"` — BRL por 1 USDC
+//! On-chain symbols published by the worker:
+//! - `"BRLXLM"`  — BRL per 1 XLM
+//! - `"BRLUSDC"` — BRL per 1 USDC
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -16,23 +16,23 @@ use reqwest::Client;
 use std::collections::HashMap;
 use tracing::{info, warn};
 
-/// Uma cotação pronta para ir ao contrato.
+/// A quote ready to go on-chain.
 #[derive(Debug, Clone)]
 pub struct Quote {
-    /// Símbolo on-chain (ex.: `"BRLXLM"`).
+    /// On-chain symbol (e.g. `"BRLXLM"`).
     pub symbol: &'static str,
-    /// Preço escalado (ex.: R$ 5,12 → `51_200_000` com escala 1e7).
+    /// Scaled price (e.g. R$ 5.12 → `51_200_000` at 1e7 scale).
     pub scaled_price: i128,
-    /// Preço "humano" (float, só p/ logs).
+    /// "Human" price (float, for logs only).
     pub human_price: f64,
-    /// Unix timestamp (segundos) da coleta.
+    /// Unix timestamp (seconds) of the fetch.
     pub timestamp: u64,
 }
 
-/// Resposta da CoinGecko: `{ "stellar": { "brl": 0.72 }, ... }`.
+/// CoinGecko response: `{ "stellar": { "brl": 0.72 }, ... }`.
 type SimplePrice = HashMap<String, HashMap<String, f64>>;
 
-/// Busca os preços na CoinGecko com retry + backoff exponencial.
+/// Fetches prices from CoinGecko with retry + exponential backoff.
 pub async fn fetch_quotes(client: &Client, base_url: &str, price_scale: f64) -> Result<Vec<Quote>> {
     let url = format!(
         "{}/simple/price?ids=stellar,usd-coin&vs_currencies=brl",
@@ -44,29 +44,29 @@ pub async fn fetch_quotes(client: &Client, base_url: &str, price_scale: f64) -> 
         match client.get(&url).send().await {
             Ok(resp) => {
                 if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    warn!("CoinGecko rate-limit (429), tentativa {attempt}/4 — aguardando…");
+                    warn!("CoinGecko rate limit (429), attempt {attempt}/4 — waiting…");
                     tokio::time::sleep(std::time::Duration::from_secs(5 * attempt as u64)).await;
                     continue;
                 }
                 let resp = resp
                     .error_for_status()
-                    .context("CoinGecko retornou HTTP de erro")?;
-                let data: SimplePrice = resp.json().await.context("JSON da CoinGecko inválido")?;
+                    .context("CoinGecko returned an HTTP error")?;
+                let data: SimplePrice = resp.json().await.context("invalid CoinGecko JSON")?;
                 return build_quotes(&data, price_scale);
             }
             Err(e) => {
-                warn!("Falha HTTP (tentativa {attempt}/4): {e:#}");
+                warn!("HTTP failure (attempt {attempt}/4): {e:#}");
                 last_err = Some(e.into());
                 tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(attempt))).await;
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("CoinGecko inacessível")))
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("CoinGecko unreachable")))
 }
 
-/// Converte a resposta bruta em `Quote`s escaladas.
+/// Converts the raw response into scaled `Quote`s.
 fn build_quotes(data: &SimplePrice, price_scale: f64) -> Result<Vec<Quote>> {
-    // Mapeia id da CoinGecko -> símbolo on-chain.
+    // Maps CoinGecko id -> on-chain symbol.
     const PAIRS: [(&str, &str); 2] = [("stellar", "BRLXLM"), ("usd-coin", "BRLUSDC")];
 
     let timestamp = Utc::now().timestamp() as u64;
@@ -77,14 +77,14 @@ fn build_quotes(data: &SimplePrice, price_scale: f64) -> Result<Vec<Quote>> {
             .get(coin_id)
             .and_then(|m| m.get("brl"))
             .copied()
-            .with_context(|| format!("CoinGecko não retornou `{coin_id}/brl`"))?;
+            .with_context(|| format!("CoinGecko did not return `{coin_id}/brl`"))?;
 
         if !(human_price.is_finite() && human_price > 0.0) {
-            anyhow::bail!("Preço inválido para {coin_id}: {human_price}");
+            anyhow::bail!("invalid price for {coin_id}: {human_price}");
         }
 
         let scaled_price = (human_price * price_scale).round() as i128;
-        info!(symbol, human_price, scaled_price, "cotação coletada");
+        info!(symbol, human_price, scaled_price, "quote fetched");
         out.push(Quote {
             symbol,
             scaled_price,
@@ -95,10 +95,10 @@ fn build_quotes(data: &SimplePrice, price_scale: f64) -> Result<Vec<Quote>> {
     Ok(out)
 }
 
-/// Converte float → inteiro escalado (usada em testes e reuso).
+/// Converts float → scaled integer (used in tests and reused elsewhere).
 pub fn scale_price(human: f64, scale: f64) -> anyhow::Result<i128> {
     if !(human.is_finite() && human > 0.0) {
-        anyhow::bail!("preço inválido: {human}");
+        anyhow::bail!("invalid price: {human}");
     }
     Ok((human * scale).round() as i128)
 }
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn scales_brl_price_to_7_decimals() {
-        // R$ 5,1234567 → 51_234_567
+        // R$ 5.1234567 → 51_234_567
         assert_eq!(scale_price(5.1234567, 10_000_000.0).unwrap(), 51_234_567);
     }
 

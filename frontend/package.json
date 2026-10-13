@@ -2,7 +2,7 @@
   "name": "stellarfeed-frontend",
   "private": true,
   "version": "0.1.0",
-  "description": "Dashboard do oráculo StellarFeed (React + Vite + Freighter)",
+  "description": "StellarFeed oracle dashboard (React + Vite + Freighter)",
   "type": "module",
   "scripts": {
     "dev": "vite",

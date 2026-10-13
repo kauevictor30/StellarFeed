@@ -37,21 +37,22 @@ impl MockFeed {
 }
 
 // --- Tests ---------------------------------------------------------------
+// NOTE: generated clients borrow the env, so each test builds its own
+// client from the addresses returned by setup().
 
-/// Registers [mock oracle + demo] and returns a demo client.
-fn setup() -> (Env, DemoConsumerClient<'static>) {
+/// Registers [mock oracle + demo], returns env and both addresses.
+fn setup() -> (Env, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let mock_id = env.register(MockFeed, ());
     let demo_id = env.register(DemoConsumer, (mock_id.clone(),));
-    // Silence unused-var style lints while keeping the addresses visible.
-    let _ = mock_id;
-    (env, DemoConsumerClient::new(&env, &demo_id))
+    (env, mock_id, demo_id)
 }
 
 #[test]
 fn test_read_price_round_trip() {
-    let (_env, client) = setup();
+    let (env, _, demo_id) = setup();
+    let client = DemoConsumerClient::new(&env, &demo_id);
 
     let quote = client.read_price(&1u32);
     assert_eq!(quote.price, 6_543_210_987_654);
@@ -61,7 +62,8 @@ fn test_read_price_round_trip() {
 
 #[test]
 fn test_read_price_scaled_to_7_decimals() {
-    let (_env, client) = setup();
+    let (env, _, demo_id) = setup();
+    let client = DemoConsumerClient::new(&env, &demo_id);
 
     // 65432.10987654 → 654321098765 (truncated toward zero).
     assert_eq!(
@@ -72,9 +74,7 @@ fn test_read_price_scaled_to_7_decimals() {
 
 #[test]
 fn test_oracle_address_pinned_at_deploy() {
-    let (env, _) = setup();
-    let mock_id = env.register(MockFeed, ());
-    let demo_id = env.register(DemoConsumer, (mock_id.clone(),));
+    let (env, mock_id, demo_id) = setup();
     let stored: Address = env.as_contract(&demo_id, || {
         env.storage().instance().get(&DataKey::Oracle).unwrap()
     });

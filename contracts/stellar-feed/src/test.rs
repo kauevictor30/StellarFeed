@@ -9,25 +9,27 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Events, MockAuth, MockAuthInvoke},
     Address, Bytes, Env, IntoVal,
 };
 
 /// Helper: registers the contract with generated lazer + admin addresses.
-fn setup() -> (Env, Address, Address, StellarFeedContractClient<'static>) {
+/// Returns the env plus addresses; each test builds its own client from
+/// them (generated clients borrow the env, so they must live in the
+/// test's own scope).
+fn setup() -> (Env, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let lazer = Address::generate(&env);
     let admin = Address::generate(&env);
     let contract_id = env.register(StellarFeedContract, (lazer.clone(), admin.clone()));
-    let client = StellarFeedContractClient::new(&env, &contract_id);
-    (env, lazer, admin, client)
+    (env, lazer, admin, contract_id)
 }
 
 #[test]
 fn test_constructor_sets_lazer_and_admin() {
-    let (env, lazer, admin, client) = setup();
-    let _ = &env;
+    let (env, lazer, admin, contract_id) = setup();
+    let client = StellarFeedContractClient::new(&env, &contract_id);
     assert_eq!(client.get_lazer(), lazer);
     assert_eq!(client.get_admin(), admin);
     assert_eq!(client.version(), 2);
@@ -35,8 +37,8 @@ fn test_constructor_sets_lazer_and_admin() {
 
 #[test]
 fn test_get_unknown_feed_fails() {
-    let (env, _, _, client) = setup();
-    let _ = &env;
+    let (env, _, _, contract_id) = setup();
+    let client = StellarFeedContractClient::new(&env, &contract_id);
 
     let res = client.try_get_price(&1u32);
     assert_eq!(res, Err(Ok(FeedError::NoPriceData)));
@@ -47,7 +49,8 @@ fn test_get_unknown_feed_fails() {
 
 #[test]
 fn test_rejects_unsigned_garbage_payload() {
-    let (env, _, _, client) = setup();
+    let (env, _, _, contract_id) = setup();
+    let client = StellarFeedContractClient::new(&env, &contract_id);
 
     // Random bytes are not a valid leEcdsa envelope: the verifier must
     // reject them and the contract must fail closed with VerifyFailed.
@@ -76,7 +79,7 @@ fn test_only_admin_can_rotate_config() {
                 contract: &contract_id,
                 fn_name: "set_lazer",
                 args: (new_lazer.clone(),).into_val(&env),
-                sub_invocations: &[],
+                sub_invokes: &[],
             },
         }])
         .set_lazer(&new_lazer);
@@ -90,7 +93,7 @@ fn test_only_admin_can_rotate_config() {
                 contract: &contract_id,
                 fn_name: "set_lazer",
                 args: (attacker.clone(),).into_val(&env),
-                sub_invocations: &[],
+                sub_invokes: &[],
             },
         }])
         .try_set_lazer(&attacker);
@@ -99,7 +102,8 @@ fn test_only_admin_can_rotate_config() {
 
 #[test]
 fn test_set_admin_rotation() {
-    let (env, _, _, client) = setup();
+    let (env, _, _, contract_id) = setup();
+    let client = StellarFeedContractClient::new(&env, &contract_id);
     let new_admin = Address::generate(&env);
 
     client.set_admin(&new_admin);
@@ -120,7 +124,8 @@ fn test_staleness_helper() {
 
 #[test]
 fn test_emits_nothing_without_feeds() {
-    let (env, _, _, client) = setup();
+    let (env, _, _, contract_id) = setup();
+    let client = StellarFeedContractClient::new(&env, &contract_id);
 
     // A rejected payload stores nothing and publishes nothing.
     let garbage = Bytes::from_slice(&env, &[0x00u8; 8]);

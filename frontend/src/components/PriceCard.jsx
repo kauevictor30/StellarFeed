@@ -1,19 +1,19 @@
-// Quote card: symbol, formatted price, timestamp, and state.
-import { formatScaled, formatTime } from "../stellar";
+// Quote card: label, Pyth-formatted price, update time, and state.
+import { formatPrice, formatTime } from "../stellar";
 
-export function PriceCard({ label, symbol, data, loading, error }) {
+export function PriceCard({ label, feedId, data, loading, error }) {
   return (
     <div style={styles.card}>
       <div style={styles.label}>{label}</div>
-      <div style={styles.symbol}>{symbol}</div>
+      <div style={styles.symbol}>Feed #{feedId}</div>
       {loading ? (
         <div style={styles.muted}>Reading from contract…</div>
       ) : error ? (
         <div style={styles.err}>Error: {error}</div>
       ) : data ? (
         <>
-          <div style={styles.price}>R$ {formatScaled(data.price)}</div>
-          <div style={styles.muted}>Updated at {formatTime(data.timestamp)}</div>
+          <div style={styles.price}>$ {formatPrice(data.price, data.exponent)}</div>
+          <div style={styles.muted}>Updated at {formatTime(data.timestampUs)}</div>
         </>
       ) : (
         <div style={styles.muted}>No quote published yet.</div>

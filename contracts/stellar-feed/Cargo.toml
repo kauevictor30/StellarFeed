@@ -1,8 +1,8 @@
 [package]
 name = "stellar-feed"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "StellarFeed — Stellar-native price oracle (Soroban)"
+description = "StellarFeed — Pyth Lazer-backed price oracle for Stellar (Soroban)"
 license = "Apache-2.0"
 
 [lib]
@@ -10,17 +10,11 @@ crate-type = ["cdylib", "lib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = "27"
+# NOTE: pinned to v26 to match pyth-lazer-stellar-sdk 0.4 (which requires
+# soroban-sdk ^26.1.0). Do NOT bump independently — mismatched majors
+# duplicate SDK types and break the build.
+soroban-sdk = "26"
+pyth-lazer-stellar-sdk = "0.4"
 
 [dev-dependencies]
-soroban-sdk = { version = "27", features = ["testutils"] }
-
-[profile.release]
-opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
-lto = true
+soroban-sdk = { version = "26", features = ["testutils"] }

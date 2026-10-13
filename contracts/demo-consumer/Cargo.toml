@@ -1,0 +1,19 @@
+[package]
+name = "demo-consumer"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal example: read on-chain prices from StellarFeed via stellar-feed-sdk"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "26"
+# Local path for development. After `cargo publish` of the SDK, swap to:
+# stellar-feed-sdk = "0.1"
+stellar-feed-sdk = { path = "../stellar-feed-sdk" }
+
+[dev-dependencies]
+soroban-sdk = { version = "26", features = ["testutils"] }

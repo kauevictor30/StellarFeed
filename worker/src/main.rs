@@ -1,22 +1,26 @@
-//! # StellarFeed Worker (pure Rust)
+//! # StellarFeed Relay Worker (pure Rust)
 //!
-//! Off-chain daemon feeding the oracle:
+//! Off-chain relayer for the Pyth-backed oracle:
 //! ```text
-//! CoinGecko (HTTP) → validate/scale → stellar contract invoke (Testnet)
+//! Pyth Pro websocket (signed leEcdsa) → stellar contract invoke → Soroban
 //! ```
-//! Infinite loop with a configurable interval (`POLL_INTERVAL_SECS`).
-//! No Python: only Rust + the official `stellar` CLI for signing/sending.
+//! The worker never touches prices: it streams signed envelopes and relays
+//! the latest one every `RELAY_INTERVAL_SECS`. Verification happens
+//! on-chain, so relaying is permissionless and failure-closed.
+//! No Python: only Rust + the official `stellar` CLI for sending.
 
 mod config;
-mod price;
+mod lazer;
 mod stellar;
 
 use std::time::Duration;
 
 use anyhow::Result;
+use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use config::Config;
+use lazer::SignedPayload;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,9 +37,12 @@ async fn main() -> Result<()> {
         network = %cfg.network,
         contract = %cfg.contract_id,
         source = %cfg.source_account,
-        interval_s = cfg.poll_interval_secs,
+        feeds = ?cfg.pyth_feed_ids,
+        channel = %cfg.pyth_channel,
+        relay_s = cfg.relay_interval_secs,
         dry_run = cfg.dry_run,
-        "StellarFeed worker starting"
+        verifier = stellar::lazer_verifier_for(&cfg.network),
+        "StellarFeed relay worker starting"
     );
 
     // Fail fast if the environment is broken (CLI/RPC).
@@ -45,37 +52,43 @@ async fn main() -> Result<()> {
         }
     }
 
-    let http = reqwest::Client::builder()
-        .user_agent("stellar-feed-worker/0.1")
-        .timeout(Duration::from_secs(20))
-        .build()?;
+    // Background task keeps the latest signed payload fresh.
+    let (tx, rx) = watch::channel::<Option<SignedPayload>>(None);
+    let sub_cfg = cfg.clone();
+    tokio::spawn(async move {
+        lazer::run_subscriber(sub_cfg, tx).await;
+    });
 
-    // Main loop: fetch → publish each symbol → sleep.
-    loop {
-        if let Err(e) = run_cycle(&cfg, &http).await {
-            error!("cycle failed: {e:#}");
-        }
-        info!("next cycle in {}s", cfg.poll_interval_secs);
-        tokio::time::sleep(Duration::from_secs(cfg.poll_interval_secs)).await;
-    }
+    run_relay_loop(&cfg, rx).await
 }
 
-/// One full cycle: fetch prices and publish each symbol.
-async fn run_cycle(cfg: &Config, http: &reqwest::Client) -> Result<()> {
-    let quotes = price::fetch_quotes(http, &cfg.coingecko_url, cfg.price_scale).await?;
-
-    for q in &quotes {
-        match stellar::submit_quote(cfg, q).await {
-            Ok(receipt) => info!(
-                symbol = q.symbol,
-                human = q.human_price,
-                scaled = q.scaled_price,
-                "published ✓ ({receipt})"
-            ),
-            Err(e) => error!(symbol = q.symbol, "publish failed: {e:#}"),
+/// Every tick: relay the newest payload unless already submitted.
+async fn run_relay_loop(
+    cfg: &Config,
+    mut rx: watch::Receiver<Option<SignedPayload>>,
+) -> Result<()> {
+    let mut last_hex = String::new();
+    loop {
+        // Wait until at least one payload has arrived.
+        if rx.borrow().is_none() {
+            info!("waiting for first signed payload…");
+            rx.changed().await?;
+            continue;
         }
-        // Small pause between symbols to avoid RPC rate limits.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let hex = rx
+            .borrow()
+            .as_ref()
+            .map(|p| p.hex.clone())
+            .unwrap_or_default();
+        if !hex.is_empty() && hex != last_hex {
+            match stellar::submit_payload(cfg, &hex).await {
+                Ok(receipt) => {
+                    info!(bytes = hex.len() / 2, "relayed ✓ ({receipt})");
+                    last_hex = hex;
+                }
+                Err(e) => error!("relay failed: {e:#}"),
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(cfg.relay_interval_secs)).await;
     }
-    Ok(())
 }

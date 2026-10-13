@@ -1,8 +1,8 @@
 [package]
 name = "stellar-feed-worker"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "StellarFeed off-chain worker: CoinGecko -> Soroban (pure Rust, no Python)"
+description = "StellarFeed relay worker: Pyth Lazer websocket -> Soroban (pure Rust, no Python)"
 license = "Apache-2.0"
 
 [[bin]]
@@ -10,14 +10,16 @@ name = "stellar-feed-worker"
 path = "src/main.rs"
 
 [dependencies]
-# HTTP + async runtime
+# Async runtime + websocket client (Pyth Pro stream) + HTTP (RPC health)
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+http = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-# Serialization / errors / logs / time / env
+# Serialization / errors / logs / env
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"

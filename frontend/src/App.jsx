@@ -2,19 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useFreighter } from "./hooks/useFreighter";
 import { PriceCard } from "./components/PriceCard";
 import { ConnectButton } from "./components/ConnectButton";
-import { CONTRACT_ID, NETWORK, fetchPrice } from "./stellar";
-
-// Symbols published by the worker (must exist on the contract).
-const SYMBOLS = [
-  { symbol: "BRLXLM", label: "BRL / Stellar" },
-  { symbol: "BRLUSDC", label: "BRL / USD Coin" },
-];
+import { CONTRACT_ID, NETWORK, FEEDS, fetchPrice } from "./stellar";
 
 const REFRESH_MS = Number(import.meta.env.VITE_REFRESH_MS || 30_000);
 
 export default function App() {
   const freighter = useFreighter();
-  const [prices, setPrices] = useState({}); // symbol -> { price, timestamp }
+  const [prices, setPrices] = useState({}); // feedId -> { price, exponent, timestampUs }
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState({});
   const [lastSync, setLastSync] = useState(null);
@@ -24,11 +18,11 @@ export default function App() {
     const next = {};
     const errs = {};
     await Promise.all(
-      SYMBOLS.map(async ({ symbol }) => {
+      FEEDS.map(async ({ feedId }) => {
         try {
-          next[symbol] = await fetchPrice(symbol);
+          next[feedId] = await fetchPrice(feedId);
         } catch (e) {
-          errs[symbol] = e.message;
+          errs[feedId] = e.message;
         }
       }),
     );
@@ -51,7 +45,7 @@ export default function App() {
         <div>
           <h1 style={styles.title}>✦ StellarFeed</h1>
           <p style={styles.sub}>
-            Stellar-native price oracle · {NETWORK} · refreshes every{" "}
+            Pyth-backed price oracle on Stellar · {NETWORK} · refreshes every{" "}
             {Math.round(REFRESH_MS / 1000)}s
           </p>
           <p style={styles.mono}>contract: {CONTRACT_ID || "(set VITE_CONTRACT_ID)"}</p>
@@ -60,14 +54,14 @@ export default function App() {
       </header>
 
       <main style={styles.grid}>
-        {SYMBOLS.map(({ symbol, label }) => (
+        {FEEDS.map(({ feedId, label }) => (
           <PriceCard
-            key={symbol}
+            key={feedId}
             label={label}
-            symbol={symbol}
-            data={prices[symbol]}
-            loading={loading && !prices[symbol]}
-            error={errors[symbol]}
+            feedId={feedId}
+            data={prices[feedId]}
+            loading={loading && !prices[feedId]}
+            error={errors[feedId]}
           />
         ))}
       </main>

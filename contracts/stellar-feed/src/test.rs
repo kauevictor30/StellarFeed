@@ -130,5 +130,5 @@ fn test_emits_nothing_without_feeds() {
     // A rejected payload stores nothing and publishes nothing.
     let garbage = Bytes::from_slice(&env, &[0x00u8; 8]);
     let _ = client.try_update_price(&garbage);
-    assert!(env.events().all().is_empty());
+    assert!(env.events().all().events().is_empty());
 }

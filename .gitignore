@@ -1,0 +1,22 @@
+# Target Rust / WASM
+/target/
+**/target/
+*.wasm
+
+# Env (nunca commitar segredos)
+.env
+worker/.env
+frontend/.env
+
+# Node / Vite
+node_modules/
+frontend/dist/
+*.local
+
+# Stellar CLI
+.stellar/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

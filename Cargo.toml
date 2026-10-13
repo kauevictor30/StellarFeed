@@ -2,5 +2,7 @@
 resolver = "2"
 members = [
     "contracts/stellar-feed",
+    "contracts/stellar-feed-sdk",
+    "contracts/demo-consumer",
     "worker",
 ]

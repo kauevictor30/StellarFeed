@@ -112,7 +112,37 @@ npm run dev      # http://localhost:5173
 npm run build    # dist/ ready for static hosting
 ```
 
-## 5. Layout
+## 5. Consume StellarFeed from your contract (SDK crate)
+
+Third-party contracts don't need to hand-roll cross-contract calls — depend on the published client crate:
+
+```toml
+# Cargo.toml of YOUR contract (soroban-sdk major must match: 26)
+stellar-feed-sdk = "0.1"
+```
+
+```rust
+use stellar_feed_sdk::StellarFeedClient;
+
+// BTC/USD (feed 1), at most 5 minutes old:
+let quote = StellarFeedClient::new(&env, &oracle)
+    .get_price_checked(1, 300)
+    .expect("stale");
+// Real value = quote.price * 10^quote.exponent.
+```
+
+See `contracts/demo-consumer` for a minimal working integration (mock-oracle tests included).
+
+### Publishing the SDK to crates.io (maintainers)
+
+```bash
+cargo login                              # one-time, paste your crates.io token
+cargo publish -p stellar-feed-sdk        # name `stellar-feed-sdk` is free
+```
+
+Rules: bump `version` every publish, never republish the same version, and keep `soroban-sdk` on the same major the oracle uses.
+
+## 6. Layout
 
 ```text
 StellarFeed/
@@ -120,6 +150,10 @@ StellarFeed/
 ├── contracts/stellar-feed/
 │   ├── Cargo.toml                # soroban-sdk v26 + pyth-lazer-stellar-sdk 0.4
 │   └── src/{lib.rs,test.rs}      # Pyth consumer + unit tests
+├── contracts/stellar-feed-sdk/
+│   └── src/lib.rs                # publishable typed client (no_std)
+├── contracts/demo-consumer/
+│   └── src/{lib.rs,test.rs}      # minimal integration example
 ├── worker/
 │   ├── Cargo.toml                # tokio, tokio-tungstenite, reqwest, serde, anyhow, tracing
 │   └── src/{main.rs,config.rs,lazer.rs,stellar.rs}
@@ -130,7 +164,7 @@ StellarFeed/
 └── README.md
 ```
 
-## 6. Security
+## 7. Security
 
 - Trust boundary is `verify_update` inside the contract — never trust caller-parsed data (Pyth's rule).
 - `update_price` is permissionless by design; admin keys cannot forge prices.
@@ -138,6 +172,6 @@ StellarFeed/
 - Secrets never committed (`.env` in `.gitignore`; API key server-side only — never in the frontend).
 - Before mainnet: full test suite + fork tests with recorded payloads, Soroban security checklist, 7-day testnet soak, mainnet RPC provider, incident plan.
 
-## 7. License
+## 8. License
 
 Apache-2.0. PRs are welcome.
